@@ -21,6 +21,7 @@ from core.menus.base_menu import BaseMenu
 from core.types.color import Color
 from extensions import EXTENSION_ROOT
 from extensions.base_extension import BaseExtension
+from utils.input_utils import get_selection_input, get_confirm
 
 
 # noinspection PyUnusedLocal
@@ -43,6 +44,7 @@ class ExtensionsMenu(BaseMenu):
             i: Option(self.extension_submenu, opt_data=self.extensions.get(i))
             for i in self.extensions
         }
+        self.options["i"] = Option(self.bulk_install_extensions)
 
     def discover_extensions(self) -> Dict[str, BaseExtension]:
         ext_dict = {}
@@ -83,8 +85,114 @@ class ExtensionsMenu(BaseMenu):
     def extension_submenu(self, **kwargs):
         ExtensionSubmenu(kwargs.get("opt_data"), self.__class__).run()
 
+    def bulk_install_extensions(self, **kwargs):
+        """Allow user to select multiple extensions for installation"""
+        print("\n" + Color.apply("=== Bulk Extension Installation ===", Color.CYAN))
+        print("\nAvailable extensions:")
+        
+        # Display extensions with selection numbers
+        for extension in self.extensions.values():
+            index = extension.metadata.get("index")
+            name = extension.metadata.get("display_name")
+            print(f"  {index}) {name}")
+        
+        print(f"\n{Color.apply('Instructions:', Color.YELLOW)}")
+        print("  - Enter extension numbers separated by spaces (e.g., 1 3 5)")
+        print("  - Enter 'all' to select all extensions")
+        print("  - Enter 'done' when finished selecting")
+        
+        selected_extensions = []
+        
+        while True:
+            selection = input(Color.apply("Select extensions (or 'done' to proceed): ", Color.CYAN)).strip()
+            
+            if selection.lower() == 'done':
+                break
+            elif selection.lower() == 'all':
+                selected_extensions = list(self.extensions.values())
+                print(f"Selected all {len(selected_extensions)} extensions")
+                break
+            else:
+                # Parse individual selections
+                try:
+                    indices = selection.split()
+                    temp_selected = []
+                    for idx in indices:
+                        if idx in self.extensions:
+                            ext = self.extensions[idx]
+                            if ext not in temp_selected:
+                                temp_selected.append(ext)
+                                print(f"Added: {ext.metadata.get('display_name')}")
+                            else:
+                                print(f"Already selected: {ext.metadata.get('display_name')}")
+                        else:
+                            print(f"Invalid extension number: {idx}")
+                    
+                    if temp_selected:
+                        for ext in temp_selected:
+                            if ext not in selected_extensions:
+                                selected_extensions.append(ext)
+                        
+                        print(f"\nCurrently selected ({len(selected_extensions)}):")
+                        for ext in selected_extensions:
+                            print(f"  - {ext.metadata.get('display_name')}")
+                
+                except Exception as e:
+                    print(f"Invalid input format. Please try again.")
+        
+        if not selected_extensions:
+            print("No extensions selected.")
+            return
+        
+        # Confirm installation
+        print(f"\n{Color.apply('Selected extensions for installation:', Color.YELLOW)}")
+        for ext in selected_extensions:
+            print(f"  - {ext.metadata.get('display_name')}")
+        
+        if get_confirm("Proceed with installation?", True):
+            self._install_selected_extensions(selected_extensions)
+        else:
+            print("Installation cancelled.")
+
+    def _install_selected_extensions(self, extensions: List[BaseExtension]):
+        """Install the selected extensions one by one"""
+        total = len(extensions)
+        successful = 0
+        failed = []
+        
+        print(f"\n{Color.apply('Starting bulk installation...', Color.GREEN)}")
+        print(f"Installing {total} extension(s)\n")
+        
+        for i, extension in enumerate(extensions, 1):
+            name = extension.metadata.get('display_name')
+            print(f"[{i}/{total}] Installing {name}...")
+            
+            try:
+                extension.install_extension()
+                successful += 1
+                Logger.print_ok(f"✓ {name} installed successfully")
+            except Exception as e:
+                failed.append(name)
+                Logger.print_error(f"✗ Failed to install {name}: {e}")
+            
+            print()  # Add spacing between installations
+        
+        # Installation summary
+        print(Color.apply("=== Installation Summary ===", Color.CYAN))
+        print(f"Total extensions: {total}")
+        print(Color.apply(f"Successful: {successful}", Color.GREEN))
+        
+        if failed:
+            print(Color.apply(f"Failed: {len(failed)}", Color.RED))
+            print("Failed extensions:")
+            for name in failed:
+                print(f"  - {name}")
+        else:
+            print(Color.apply("All extensions installed successfully! 🎉", Color.GREEN))
+
     def print_menu(self) -> None:
         line1 = Color.apply("Available Extensions:", Color.YELLOW)
+        line2 = Color.apply("I) Bulk Install Extensions", Color.GREEN)
         menu = textwrap.dedent(
             f"""
             ╟───────────────────────────────────────────────────────╢
@@ -99,6 +207,9 @@ class ExtensionsMenu(BaseMenu):
             name = extension.metadata.get("display_name")
             row = f"{index}) {name}"
             print(f"║ {row:<53} ║")
+        
+        print("║                                                       ║")
+        print(f"║ {line2:<62} ║")
         print("╟───────────────────────────────────────────────────────╢")
 
 
